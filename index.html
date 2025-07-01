@@ -637,8 +637,65 @@
     <div id="print-section" class="hidden"></div>
 
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
+    <script type="module">
+        // Firebase SDK imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, onSnapshot, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase variables (will be initialized on DOMContentLoaded)
+        let app;
+        let db;
+        let auth;
+        let userId; // To store the current user's ID
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Initialize Firebase
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+            if (Object.keys(firebaseConfig).length > 0) {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Sign in anonymously or with custom token
+                if (typeof __initial_auth_token !== 'undefined') {
+                    try {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } catch (error) {
+                        console.error("Error signing in with custom token:", error);
+                        await signInAnonymously(auth); // Fallback to anonymous if custom token fails
+                    }
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Listen for auth state changes to get the user ID
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("Firebase User ID:", userId);
+                        // Start listening to Firestore data once authenticated
+                        setupFirestoreListener();
+                        // Display user ID on the UI (e.g., in a corner or header)
+                        displayUserId(userId);
+                    } else {
+                        userId = null;
+                        console.log("No user signed in.");
+                        // Clear transactions if no user is signed in
+                        transactions = [];
+                        renderAllUI();
+                        displayUserId("Non connecté");
+                    }
+                });
+            } else {
+                showMessageModal("Firebase Non Configuré", "Firebase n'est pas configuré. Les données ne seront pas sauvegardées dans le cloud.");
+                // Continue with local storage functionality if Firebase is not configured
+                loadTransactionsFromLocalStorage(); // Load from local storage as a fallback
+                renderAllUI();
+            }
+
             // DOM Elements
             const availableAmountEl = document.getElementById('availableAmount');
             const availableAmountBox = document.getElementById('availableAmountBox');
@@ -710,13 +767,11 @@
 
 
             // Collect all navigable input elements for arrow key navigation (for add transaction form)
-            // Updated to reflect textarea and dynamic currency fields
             const navigableInputs = [dateInput, personInput, typeRadios[0], descriptionInput, amountInput, currencySelect, exchangeRateInput];
 
             // App State
             let transactions = [];
-            let transactionToDeleteIndex = null;
-            let currentFocusIndex = 0; // For arrow key navigation in add transaction form
+            let transactionToDeleteId = null; // Changed to store Firestore doc ID
 
             // Pagination state for all transactions view
             let currentPage = 1;
@@ -727,6 +782,40 @@
 
             // Set today's date by default
             dateInput.valueAsDate = new Date();
+
+            // Add a div to display the user ID
+            const userIdDisplay = document.createElement('div');
+            userIdDisplay.id = 'userIdDisplay';
+            userIdDisplay.className = 'absolute top-4 right-4 bg-gray-800 text-white text-xs px-3 py-1 rounded-full shadow-md z-50';
+            document.body.appendChild(userIdDisplay);
+
+            function displayUserId(id) {
+                userIdDisplay.textContent = `User ID: ${id}`;
+            }
+
+            /**
+             * Sets up a real-time listener for transactions from Firestore.
+             */
+            function setupFirestoreListener() {
+                if (!db || !userId) {
+                    console.log("Firestore or User ID not ready for listener.");
+                    return;
+                }
+                // Use the public collection for simplicity, accessible by any authenticated user
+                const transactionsColRef = collection(db, `artifacts/${appId}/public/data/transactions`);
+
+                onSnapshot(transactionsColRef, (snapshot) => {
+                    const fetchedTransactions = [];
+                    snapshot.forEach(doc => {
+                        fetchedTransactions.push({ id: doc.id, ...doc.data() });
+                    });
+                    transactions = fetchedTransactions;
+                    renderAllUI(); // Re-render UI with fetched data
+                }, (error) => {
+                    console.error("Error fetching transactions from Firestore:", error);
+                    showMessageModal("Erreur Firestore", "Impossible de charger les transactions depuis le cloud.");
+                });
+            }
 
             /**
              * Displays a custom message modal instead of `alert()`.
@@ -747,48 +836,6 @@
             }
 
             /**
-             * Saves the current transactions array to localStorage.
-             */
-            function saveTransactionsToLocalStorage() {
-                try {
-                    localStorage.setItem('facturisationTransactions', JSON.stringify(transactions));
-                } catch (e) {
-                    console.error("Error saving to localStorage:", e);
-                    showMessageModal("Erreur de Sauvegarde", "Impossible de sauvegarder les données. Le stockage de votre navigateur est peut-être plein.");
-                }
-            }
-
-            /**
-             * Loads transactions from localStorage when the app starts.
-             */
-            function loadTransactionsFromLocalStorage() {
-                try {
-                    const storedData = localStorage.getItem('facturisationTransactions');
-                    if (storedData) {
-                        transactions = JSON.parse(storedData);
-                    }
-                } catch (e) {
-                    console.error("Error loading from localStorage:", e);
-                    transactions = []; // Reset transactions if loading fails
-                    showMessageModal("Erreur de Chargement", "Impossible de charger les données sauvegardées. Elles sont peut-être corrompues.");
-                }
-            }
-
-            /**
-             * Updates the background color of the add transaction form based on the selected type (Entrée/Sortie).
-             */
-            function updateAddTransactionBackground() {
-                const selectedType = document.querySelector('input[name="type"]:checked').value;
-                if (selectedType === 'Entrée') {
-                    addTransactionContainer.classList.add('entree-bg');
-                    addTransactionContainer.classList.remove('sortie-bg');
-                } else {
-                    addTransactionContainer.classList.add('sortie-bg');
-                    addTransactionContainer.classList.remove('entree-bg');
-                }
-            }
-
-            /**
              * Renders transaction rows into a given table body.
              * @param {HTMLElement} tableBody - The tbody element to render into.
              * @param {Array} transactionsToRender - The array of transactions to render.
@@ -805,25 +852,13 @@
                     const isEntree = tx.type === 'Entrée';
                     row.className = `border-b ${isEntree ? 'table-row-enter' : 'table-row-exit'}`;
 
-                    // Find the original index for editing/deleting in the unsorted 'transactions' array
-                    const originalIndex = transactions.findIndex(item => 
-                        item.date === tx.date && 
-                        item.person === tx.person && 
-                        item.type === tx.type && 
-                        item.description === tx.description && 
-                        item.amount === tx.amount &&
-                        item.foreignAmount === tx.foreignAmount &&
-                        item.foreignCurrency === tx.foreignCurrency &&
-                        item.exchangeRate === tx.exchangeRate
-                    );
-
                     let actionsHtml = '';
                     if (includeActions) {
                         actionsHtml = `
                             <td class="text-center py-3 px-4">
                                 <div class="flex justify-center items-center space-x-2">
-                                    <button data-index="${originalIndex}" class="action-btn edit-btn" title="Modifier">✏️</button>
-                                    <button data-index="${originalIndex}" class="action-btn delete-btn" title="Supprimer">🗑️</button>
+                                    <button data-id="${tx.id}" class="action-btn edit-btn" title="Modifier">✏️</button>
+                                    <button data-id="${tx.id}" class="action-btn delete-btn" title="Supprimer">🗑️</button>
                                 </div>
                             </td>
                         `;
@@ -1003,9 +1038,14 @@
             }
 
             /**
-             * Adds a new transaction to the list.
+             * Adds a new transaction to Firestore.
              */
-            function addTransaction() {
+            async function addTransaction() {
+                if (!db || !userId) {
+                    showMessageModal("Erreur de Connexion", "Veuillez vous assurer que vous êtes connecté pour ajouter des transactions.");
+                    return;
+                }
+
                 const date = dateInput.value;
                 const person = personInput.value;
                 const type = document.querySelector('input[name="type"]:checked').value;
@@ -1034,7 +1074,8 @@
                     person,
                     type,
                     description,
-                    amount: amountInDZD.toFixed(2) // Store converted DZD amount
+                    amount: amountInDZD.toFixed(2), // Store converted DZD amount
+                    timestamp: new Date().toISOString() // Add a timestamp for ordering
                 };
 
                 if (currency !== 'DZD') {
@@ -1043,19 +1084,23 @@
                     newTransaction.exchangeRate = exchangeRate.toFixed(2);
                 }
 
-                transactions.push(newTransaction);
-                saveTransactionsToLocalStorage();
-                renderAllUI(); // Re-render all UI sections
-                clearInputs();
-                showMessageModal("Succès !", "Transaction ajoutée avec succès !"); // Show success message
+                try {
+                    // Add a new document with a generated ID to the public collection
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/transactions`), newTransaction);
+                    showMessageModal("Succès !", "Transaction ajoutée avec succès !");
+                    clearInputs();
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                    showMessageModal("Erreur Firestore", "Impossible d'ajouter la transaction au cloud.");
+                }
             }
             
             /**
              * Shows the delete confirmation modal.
-             * @param {number} index - The index of the transaction to delete.
+             * @param {string} id - The Firestore document ID of the transaction to delete.
              */
-            function showDeleteModal(index) {
-                transactionToDeleteIndex = index;
+            function showDeleteModal(id) {
+                transactionToDeleteId = id;
                 confirmModal.classList.add('visible');
             }
 
@@ -1063,29 +1108,40 @@
              * Hides the delete confirmation modal.
              */
             function hideDeleteModal() {
-                transactionToDeleteIndex = null;
+                transactionToDeleteId = null;
                 confirmModal.classList.remove('visible');
             }
 
             /**
-             * Deletes the transaction at the stored index.
+             * Deletes the transaction from Firestore.
              */
-            function deleteTransaction() {
-                if (transactionToDeleteIndex !== null) {
-                    transactions.splice(transactionToDeleteIndex, 1);
-                    saveTransactionsToLocalStorage();
-                    renderAllUI(); // Re-render all UI sections
+            async function deleteTransaction() {
+                if (!db || !userId || !transactionToDeleteId) {
+                    showMessageModal("Erreur de Connexion", "Veuillez vous assurer que vous êtes connecté et qu'une transaction est sélectionnée.");
+                    return;
+                }
+
+                try {
+                    await deleteDoc(doc(db, `artifacts/${appId}/public/data/transactions`, transactionToDeleteId));
+                    showMessageModal("Succès !", "Transaction supprimée avec succès !");
                     hideDeleteModal();
+                } catch (e) {
+                    console.error("Error removing document: ", e);
+                    showMessageModal("Erreur Firestore", "Impossible de supprimer la transaction du cloud.");
                 }
             }
             
             /**
              * Shows the edit transaction modal and populates it with transaction data.
-             * @param {number} index - The index of the transaction to edit.
+             * @param {string} id - The Firestore document ID of the transaction to edit.
              */
-            function showEditModal(index) {
-                const tx = transactions[index];
-                document.getElementById('editIndex').value = index;
+            function showEditModal(id) {
+                const tx = transactions.find(t => t.id === id);
+                if (!tx) {
+                    showMessageModal("Erreur", "Transaction introuvable.");
+                    return;
+                }
+                document.getElementById('editIndex').value = tx.id; // Store ID, not index
                 editDateInput.value = tx.date;
                 editPersonInput.value = tx.person;
                 if (tx.type === 'Entrée') {
@@ -1118,12 +1174,17 @@
             }
 
             /**
-             * Saves changes made in the edit form to the transaction.
+             * Saves changes made in the edit form to the transaction in Firestore.
              * @param {Event} e - The form submission event.
              */
-            function saveTransactionChanges(e) {
+            async function saveTransactionChanges(e) {
                 e.preventDefault();
-                const index = document.getElementById('editIndex').value;
+                if (!db || !userId) {
+                    showMessageModal("Erreur de Connexion", "Veuillez vous assurer que vous êtes connecté pour sauvegarder les modifications.");
+                    return;
+                }
+
+                const docIdToUpdate = document.getElementById('editIndex').value;
                 const updatedOriginalAmount = parseFloat(editAmountInput.value);
                 const updatedCurrency = editCurrencySelect.value;
                 let updatedExchangeRate = 1;
@@ -1143,7 +1204,7 @@
                     updatedAmountInDZD = updatedOriginalAmount * updatedExchangeRate;
                 }
 
-                const updatedTx = {
+                const updatedTxData = {
                     date: editDateInput.value,
                     person: editPersonInput.value,
                     type: document.querySelector('input[name="editType"]:checked').value,
@@ -1152,16 +1213,24 @@
                 };
 
                 if (updatedCurrency !== 'DZD') {
-                    updatedTx.foreignAmount = updatedOriginalAmount.toFixed(2);
-                    updatedTx.foreignCurrency = updatedCurrency;
-                    updatedTx.exchangeRate = updatedExchangeRate.toFixed(2);
+                    updatedTxData.foreignAmount = updatedOriginalAmount.toFixed(2);
+                    updatedTxData.foreignCurrency = updatedCurrency;
+                    updatedTxData.exchangeRate = updatedExchangeRate.toFixed(2);
+                } else {
+                    // Ensure foreign currency fields are removed if currency is DZD
+                    delete updatedTxData.foreignAmount;
+                    delete updatedTxData.foreignCurrency;
+                    delete updatedTxData.exchangeRate;
                 }
 
-                transactions[index] = updatedTx;
-                saveTransactionsToLocalStorage();
-                renderAllUI(); // Re-render all UI sections
-                hideEditModal();
-                showMessageModal("Succès !", "Modifications sauvegardées avec succès !"); // Show success message
+                try {
+                    await updateDoc(doc(db, `artifacts/${appId}/public/data/transactions`, docIdToUpdate), updatedTxData);
+                    showMessageModal("Succès !", "Modifications sauvegardées avec succès !");
+                    hideEditModal();
+                } catch (e) {
+                    console.error("Error updating document: ", e);
+                    showMessageModal("Erreur Firestore", "Impossible de sauvegarder les modifications de la transaction.");
+                }
             }
 
             /**
@@ -1182,14 +1251,16 @@
             }
 
             /**
-             * Saves all transactions to a JSON file.
+             * Saves all transactions to a JSON file (local download, not cloud).
              */
             function saveDataToFile() {
                 if (transactions.length === 0) {
-                    showMessageModal("Aucune Donnée", "Il n'y a aucune transaction à sauvegarder.");
+                    showMessageModal("Aucune Donnée", "Il n'y a aucune transaction à sauvegarder localement.");
                     return;
                 }
-                const dataStr = JSON.stringify(transactions, null, 2);
+                // Exclude Firestore 'id' field for local save if not needed, or keep if useful for re-import
+                const dataToSave = transactions.map(({ id, ...rest }) => rest); 
+                const dataStr = JSON.stringify(dataToSave, null, 2);
                 const dataBlob = new Blob([dataStr], {type: "application/json"});
                 const url = URL.createObjectURL(dataBlob);
                 const link = document.createElement('a');
@@ -1198,31 +1269,43 @@
                 link.href = url;
                 link.click();
                 URL.revokeObjectURL(url);
-                showMessageModal("Sauvegarde Réussie", "Vos données ont été sauvegardées avec succès !");
+                showMessageModal("Sauvegarde Locale Réussie", "Vos données ont été sauvegardées localement !");
             }
 
             /**
-             * Restores transactions from a selected JSON file.
+             * Restores transactions from a selected JSON file (local upload, not cloud).
+             * This will *add* to Firestore if connected, or replace local storage if not.
              * @param {Event} event - The file input change event.
              */
             function restoreDataFromFile(event) {
                 const file = event.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = async function(e) {
                     try {
                         const data = JSON.parse(e.target.result);
                         if (Array.isArray(data)) {
-                            transactions = data;
-                            saveTransactionsToLocalStorage(); // Save restored data to local storage
+                            if (db && userId) {
+                                // If connected to Firestore, upload these transactions
+                                for (const tx of data) {
+                                    // Remove any existing 'id' from imported data to let Firestore generate new ones
+                                    const { id, ...txWithoutId } = tx;
+                                    await addDoc(collection(db, `artifacts/${appId}/public/data/transactions`), txWithoutId);
+                                }
+                                showMessageModal("Restauration Cloud Réussie", "Les données du fichier ont été ajoutées à votre base de données cloud !");
+                            } else {
+                                // Fallback to local storage if not connected to Firestore
+                                transactions = data;
+                                localStorage.setItem('facturisationTransactions', JSON.stringify(transactions)); // Save restored data to local storage
+                                showMessageModal("Restauration Locale Réussie", "Les données ont été restaurées localement !");
+                            }
                             renderAllUI(); // Re-render all UI sections
-                            showMessageModal("Restauration Réussie", "Les données ont été restaurées avec succès !");
                         } else {
                             showMessageModal("Erreur de Fichier", "Format de fichier invalide. Veuillez sélectionner un fichier JSON valide.");
                         }
                     } catch (error) {
-                        console.error("Impossible de lire le fichier.", error);
-                        showMessageModal("Erreur de Lecture", "Impossible de lire le fichier. Assurez-vous qu'il s'agit d'un fichier JSON valide.");
+                        console.error("Impossible de lire le fichier ou d'écrire dans Firestore.", error);
+                        showMessageModal("Erreur de Lecture/Écriture", "Impossible de lire le fichier ou d'écrire dans le cloud. Assurez-vous qu'il s'agit d'un fichier JSON valide et que vous êtes connecté.");
                     }
                 };
                 reader.readAsText(file);
@@ -1445,11 +1528,11 @@
                 const target = e.target.closest('.action-btn');
                 if (!target) return;
 
-                const index = parseInt(target.getAttribute('data-index'));
+                const id = target.getAttribute('data-id'); // Use data-id instead of data-index
                 if (target.classList.contains('edit-btn')) {
-                    showEditModal(index);
+                    showEditModal(id);
                 } else if (target.classList.contains('delete-btn')) {
-                    showDeleteModal(index);
+                    showDeleteModal(id);
                 }
             });
             
@@ -1515,9 +1598,8 @@
                 }
             });
             
-            // Initial load from localStorage and render
-            loadTransactionsFromLocalStorage();
-            renderAllUI(); // Initial render of all UI components
+            // Initial UI rendering (will be updated by Firestore listener once data loads)
+            renderAllUI();
             showView('dashboardView'); // Show dashboard by default
             calculateAndDisplayDZD(); // Initial calculation for add form
         });
