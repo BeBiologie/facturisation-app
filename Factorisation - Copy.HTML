@@ -1,0 +1,1526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facturisation App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Base styles for the Inter font */
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Custom styles for transaction rows based on type */
+        .table-row-enter {
+            background-color: #e6fffa; /* Light green for 'Entrée' */
+        }
+        .table-row-exit {
+            background-color: #ffe5e5; /* Light red for 'Sortie' */
+        }
+
+        /* Visually hidden file input for better accessibility */
+        .hidden-file-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+
+        /* Modal overlay for consistent backdrop */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6); /* Slightly darker overlay */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0; /* Start hidden for transition */
+            visibility: hidden; /* Hide completely for accessibility */
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Modal content styling with modern shadow and animation */
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 1rem; /* More rounded corners */
+            box-shadow: 0 15px 30px rgba(0,0,0,0.15); /* Stronger, softer shadow */
+            width: 90%;
+            max-width: 700px; /* Increased max-width for more space */
+            transform: translateY(-20px); /* Initial position for animation */
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            opacity: 0; /* Start hidden for animation */
+        }
+        .modal-overlay.visible .modal-content {
+            transform: translateY(0); /* Animate to final position */
+            opacity: 1;
+        }
+
+        /* Action buttons in table for edit/delete */
+        .action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.35rem; /* Slightly larger icons */
+            padding: 0.35rem; /* More padding */
+            transition: transform 0.2s ease-in-out, color 0.2s ease-in-out;
+            color: #6b7280; /* Neutral gray */
+        }
+        .action-btn:hover {
+            transform: scale(1.3); /* More pronounced hover effect */
+            color: #2563eb; /* Blue on hover */
+        }
+        .action-btn.delete-btn:hover {
+            color: #ef4444; /* Red on hover for delete */
+        }
+
+        /* Radio button group for transaction type */
+        .type-radio-group {
+            display: flex;
+            gap: 0.75rem; /* Slightly less gap */
+            margin-top: 0.5rem;
+        }
+        .type-radio-group input[type="radio"] {
+            display: none; /* Hide native radio button */
+        }
+        .type-radio-group label {
+            padding: 0.6rem 1.2rem; /* More padding for larger touch target */
+            border-radius: 0.75rem; /* More rounded */
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+            font-weight: 500;
+            color: #4a5568; /* gray-700 */
+            border: 1px solid #cbd5e0; /* gray-300 */
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05); /* Subtle shadow */
+        }
+
+        /* Style for Entrée radio button */
+        .type-radio-group input[id$="Entree"]:checked + label {
+            background-color: #10b981; /* Emerald green */
+            color: white;
+            border-color: #10b981;
+            box-shadow: 0 4px 8px rgba(16, 185, 129, 0.2); /* Green shadow */
+        }
+        .type-radio-group input[id$="Entree"] + label:hover {
+            background-color: #059669; /* Darker emerald on hover */
+            color: white;
+            border-color: #059669;
+        }
+
+        /* Style for Sortie radio button */
+        .type-radio-group input[id$="Sortie"]:checked + label {
+            background-color: #ef4444; /* Red */
+            color: white;
+            border-color: #ef4444;
+            box-shadow: 0 4px 8px rgba(239, 68, 68, 0.2); /* Red shadow */
+        }
+        .type-radio-group input[id$="Sortie"] + label:hover {
+            background-color: #dc2626; /* Darker red on hover */
+            color: white;
+            border-color: #dc2626;
+        }
+
+        /* Transaction form background based on type selection */
+        .transaction-form-container.entree-bg {
+            background-color: #ecfdf5; /* Lightest green */
+            transition: background-color 0.4s ease-in-out;
+        }
+        .transaction-form-container.sortie-bg {
+            background-color: #fef2f2; /* Lightest red */
+            transition: background-color 0.4s ease-in-out;
+        }
+
+        /* Montant Disponible improved design */
+        .available-amount-box {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); /* Indigo to Purple gradient */
+            color: white;
+            border-radius: 2rem; /* Even more rounded */
+            padding: 2rem 2.5rem; /* More padding */
+            margin-bottom: 2rem; /* More spacing */
+            box-shadow: 0 15px 30px rgba(99, 102, 241, 0.3); /* Prominent, soft shadow */
+            transition: all 0.3s ease-in-out;
+            transform: translateY(0); /* For subtle hover effect */
+        }
+        .available-amount-box:hover {
+            transform: translateY(-5px); /* Lift on hover */
+            box-shadow: 0 20px 40px rgba(99, 102, 241, 0.4);
+        }
+        .available-amount-box.negative {
+            background: linear-gradient(135deg, #ef4444 0%, #f97316 100%); /* Red to Orange gradient for negative */
+            box-shadow: 0 15px 30px rgba(239, 68, 68, 0.3);
+        }
+        .available-amount-box.negative:hover {
+            box-shadow: 0 20px 40px rgba(239, 68, 68, 0.4);
+        }
+        .available-amount-box h2 {
+            font-size: 1.6rem; /* Slightly larger heading */
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .available-amount-box p {
+            font-size: 4rem; /* Even larger amount */
+            font-weight: 700;
+            line-height: 1;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.15);
+        }
+
+        /* Improved Ajouter Button */
+        #addTransaction {
+            background-color: #2563eb; /* Blue-600 */
+            transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2); /* Soft shadow */
+        }
+        #addTransaction:hover {
+            background-color: #1d4ed8; /* Blue-700 */
+            transform: translateY(-2px); /* Lift slightly on hover */
+            box-shadow: 0 6px 15px rgba(37, 99, 235, 0.3); /* Enhanced shadow */
+        }
+
+        /* General input and select styling */
+        input[type="date"], input[type="text"], input[type="number"], select, textarea {
+            border: 1px solid #d1d5db; /* gray-300 */
+            border-radius: 0.5rem; /* Slightly more rounded */
+            padding: 0.6rem 1rem; /* More padding */
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input[type="date"]:focus, input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
+            border-color: #6366f1; /* Indigo-500 */
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2); /* Focus ring */
+            outline: none;
+        }
+
+        /* Table styling */
+        .transaction-table-container thead th {
+            background-color: #f3f4f6; /* Light gray for header */
+            color: #4b5563; /* Darker gray text */
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.8rem; /* Slightly smaller font */
+            padding: 1rem 1.25rem; /* More padding */
+            border-bottom: 2px solid #e5e7eb; /* Subtle border */
+        }
+        .transaction-table-container tbody tr {
+            transition: background-color 0.2s ease-in-out;
+        }
+        .transaction-table-container tbody tr:hover {
+            background-color: #f9fafb; /* Lighter hover background */
+        }
+        .transaction-table-container tbody td {
+            padding: 1rem 1.25rem; /* Consistent padding */
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 0.95rem;
+        }
+        .transaction-table-container tbody tr:last-child td {
+            border-bottom: none; /* No border for the last row */
+        }
+
+        /* Sidebar button improvements */
+        aside button, aside label {
+            border-radius: 0.75rem; /* More rounded */
+            padding: 0.75rem 1rem; /* More padding */
+            font-weight: 500;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        aside button:hover, aside label:hover {
+            background-color: #374151; /* Darker gray on hover */
+            transform: translateX(5px); /* Slide effect on hover */
+        }
+
+        /* Custom scrollbar for main content area and sidebar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Print specific styles */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #print-section, #print-section * {
+                visibility: visible;
+            }
+            #print-section {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                padding: 1rem; /* Add some padding for print */
+            }
+
+            /* Print specific styles for table */
+            #print-section table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.85rem;
+            }
+            #print-section th, #print-section td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            #print-section th {
+                background-color: #f2f7fc;
+                font-weight: 600;
+                color: #333;
+            }
+            #print-section tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+            #print-section .table-row-enter {
+                background-color: #e6fffa !important;
+            }
+            #print-section .table-row-exit {
+                background-color: #ffe5e5 !important;
+            }
+
+            /* Hide the actions column in print */
+            #print-section table th:nth-child(6),
+            #print-section table td:nth-child(6) {
+                display: none;
+            }
+
+            /* Adjust spacing for header elements in print */
+            #print-section header {
+                padding-bottom: 0.5rem;
+                margin-bottom: 1rem;
+            }
+            #print-section header h1 {
+                font-size: 1.8rem;
+            }
+            #print-section header p {
+                font-size: 0.8rem;
+            }
+
+            /* Adjust spacing and font sizes for summary boxes in print */
+            #print-section .summary-boxes {
+                margin-bottom: 1.5rem;
+            }
+            #print-section .summary-boxes > div {
+                padding: 0.6rem 0.8rem;
+                margin: 0 5px;
+            }
+            #print-section .summary-boxes h3 {
+                font-size: 0.8rem;
+                margin: 0 0 0.3rem 0;
+            }
+            #print-section .summary-boxes p {
+                font-size: 1.3rem;
+            }
+
+            #print-section h2 {
+                font-size: 1.2rem;
+                margin-bottom: 0.8rem;
+            }
+            #print-section footer {
+                margin-top: 2rem;
+                font-size: 0.7rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="w-20 md:w-64 bg-gray-900 text-white flex flex-col items-center md:items-start p-4 space-y-6 shadow-xl overflow-y-auto custom-scrollbar">
+            <h2 class="text-xl font-extrabold hidden md:block self-center text-indigo-400 mt-2">FacturApp</h2>
+            <button id="dashboardBtn" class="w-full flex items-center justify-center md:justify-start p-3 rounded-lg hover:bg-gray-700 transition duration-300 group">
+                <span class="text-3xl transition-transform group-hover:scale-110">🏠</span>
+                <span class="ml-4 hidden md:inline text-lg">Tableau de Bord</span>
+            </button>
+            <button id="allTransactionsBtn" class="w-full flex items-center justify-center md:justify-start p-3 rounded-lg hover:bg-gray-700 transition duration-300 group">
+                <span class="text-3xl transition-transform group-hover:scale-110">📊</span>
+                <span class="ml-4 hidden md:inline text-lg">Historique Complet</span>
+            </button>
+            <button id="printBtn" class="w-full flex items-center justify-center md:justify-start p-3 rounded-lg hover:bg-gray-700 transition duration-300 group">
+                <span class="text-3xl transition-transform group-hover:scale-110">🖨️</span>
+                <span class="ml-4 hidden md:inline text-lg">Imprimer / PDF</span>
+            </button>
+            <button id="saveFileBtn" class="w-full flex items-center justify-center md:justify-start p-3 rounded-lg hover:bg-gray-700 transition duration-300 group">
+                <span class="text-3xl transition-transform group-hover:scale-110">💾</span>
+                <span class="ml-4 hidden md:inline text-lg">Sauvegarder</span>
+            </button>
+            <label for="restoreFileInput" class="w-full flex items-center justify-center md:justify-start p-3 rounded-lg hover:bg-gray-700 transition duration-300 cursor-pointer group">
+                <span class="text-3xl transition-transform group-hover:scale-110">📂</span>
+                <span class="ml-4 hidden md:inline text-lg">Restaurer</span>
+            </label>
+            <input type="file" id="restoreFileInput" class="hidden-file-input" accept=".json">
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 p-4 md:p-10 overflow-y-auto custom-scrollbar">
+            <div class="container mx-auto max-w-5xl">
+                <!-- Dashboard View -->
+                <div id="dashboardView" class="view-section">
+                    <!-- Header Section -->
+                    <div class="bg-white shadow-lg rounded-3xl p-6 md:p-8 mb-8 border border-gray-200">
+                        <h1 class="text-3xl md:text-4xl font-extrabold text-center text-gray-800 mb-6 leading-tight">Système de Facturisation</h1>
+                        <div id="availableAmountBox" class="text-center available-amount-box">
+                            <h2 class="font-semibold">Montant Disponible</h2>
+                            <p id="availableAmount" class="font-bold">0.00 DA</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                            <div class="bg-green-50 text-green-700 rounded-xl p-4 shadow-sm border border-green-200">
+                                <h3 class="text-md font-semibold mb-1">Total Revenus</h3>
+                                <p id="totalRevenue" class="text-3xl font-bold">0.00 DA</p>
+                            </div>
+                            <div class="bg-red-50 text-red-700 rounded-xl p-4 shadow-sm border border-red-200">
+                                <h3 class="text-md font-semibold mb-1">Total Dépenses</h3>
+                                <p id="totalExpense" class="text-3xl font-bold">0.00 DA</p>
+                            </div>
+                            <div class="bg-blue-50 text-blue-700 rounded-xl p-4 shadow-sm border border-blue-200">
+                                <h3 class="text-md font-semibold mb-1">Transactions</h3>
+                                <p id="transactionCount" class="text-3xl font-bold">0 📋</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Add Transaction Form -->
+                    <div id="addTransactionContainer" class="bg-white shadow-lg rounded-3xl p-6 md:p-8 mb-8 transition-colors duration-500 border border-gray-200">
+                        <h3 class="text-2xl font-bold mb-6 text-gray-800">Ajouter une Transaction</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-end">
+                            <div>
+                                <label for="date" class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                <input type="date" id="date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5">
+                            </div>
+                            <div>
+                                <label for="person" class="block text-sm font-medium text-gray-700 mb-1">Personne</label>
+                                <select id="person" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5 bg-white">
+                                    <option>Samir</option>
+                                    <option>ABS Filtre</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                                <div class="type-radio-group">
+                                    <input type="radio" id="typeEntree" name="type" value="Entrée" checked>
+                                    <label for="typeEntree">Entrée</label>
+                                    <input type="radio" id="typeSortie" name="type" value="Sortie">
+                                    <label for="typeSortie">Sortie</label>
+                                </div>
+                            </div>
+                            <div class="col-span-full">
+                                <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                <textarea id="description" placeholder="Ex: Vente de pièces, Loyer..." rows="3" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5"></textarea>
+                            </div>
+                            <!-- Currency and Amount Inputs -->
+                            <div>
+                                <label for="amount" class="block text-sm font-medium text-gray-700 mb-1">Montant</label>
+                                <div class="flex items-center space-x-2">
+                                    <input type="number" id="amount" placeholder="0.00" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5 flex-grow">
+                                    <select id="currency" class="mt-1 block rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5 bg-white">
+                                        <option value="DZD">DA</option>
+                                        <option value="EUR">€</option>
+                                        <option value="USD">$</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="exchangeRateGroup" class="hidden">
+                                <label for="exchangeRate" class="block text-sm font-medium text-gray-700 mb-1">Taux de Change (1 EUR/USD = X DA)</label>
+                                <input type="number" id="exchangeRate" placeholder="0.00" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5">
+                            </div>
+                            <div id="convertedAmountDisplay" class="col-span-full text-right text-gray-600 text-sm mt-2">
+                                Montant en DZD: <span id="calculatedDZD">0.00 DA</span>
+                            </div>
+                        </div>
+                        <div class="text-right mt-6">
+                            <button id="addTransaction" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-xl shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-300 transform hover:scale-105">
+                                <svg class="-ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                                </svg>
+                                Ajouter
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Recent Transactions Table -->
+                    <div class="bg-white shadow-lg rounded-3xl p-6 md:p-8 mb-8 border border-gray-200">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-6">Transactions Récentes</h3>
+                        <div class="overflow-x-auto rounded-lg border border-gray-200 transaction-table-container">
+                            <table id="transactionTable" class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="text-left py-3 px-4 font-semibold text-sm text-gray-600">Date</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-sm text-gray-600">Personne</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-sm text-gray-600">Type</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-sm text-gray-600">Description</th>
+                                        <th class="text-right py-3 px-4 font-semibold text-sm text-gray-600">Montant (DA)</th>
+                                        <th class="text-center py-3 px-4 font-semibold text-sm text-gray-600">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-100">
+                                    <!-- Recent transaction rows will be inserted here by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="noRecentTransactionsMessage" class="text-center text-gray-500 py-8 text-lg hidden">
+                            Aucune transaction récente à afficher.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- All Transactions View (initially hidden) -->
+                <div id="allTransactionsView" class="view-section hidden">
+                    <div class="bg-white shadow-lg rounded-3xl p-6 md:p-8 border border-gray-200">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-6">Historique Complet des Transactions</h3>
+                        
+                        <!-- Search and Filter Controls -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div>
+                                <label for="searchTransactions" class="block text-sm font-medium text-gray-700 mb-1">Rechercher</label>
+                                <input type="text" id="searchTransactions" placeholder="Rechercher par description ou personne..." class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5">
+                            </div>
+                            <div>
+                                <label for="filterPerson" class="block text-sm font-medium text-gray-700 mb-1">Filtrer par Personne</label>
+                                <select id="filterPerson" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5 bg-white">
+                                    <option value="">Toutes les personnes</option>
+                                    <option value="Samir">Samir</option>
+                                    <option value="ABS Filtre">ABS Filtre</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="filterType" class="block text-sm font-medium text-gray-700 mb-1">Filtrer par Type</label>
+                                <select id="filterType" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 p-2.5 bg-white">
+                                    <option value="">Tous les types</option>
+                                    <option value="Entrée">Entrée</option>
+                                    <option value="Sortie">Sortie</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto rounded-lg border border-gray-200 transaction-table-container">
+                            <table id="allTransactionsTable" class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="text-left py-3 px-4 font-semibold text-sm text-gray-600">Date</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-sm text-gray-600">Personne</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-sm text-gray-600">Type</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-sm text-gray-600">Description</th>
+                                        <th class="text-right py-3 px-4 font-semibold text-sm text-gray-600">Montant (DA)</th>
+                                        <th class="text-center py-3 px-4 font-semibold text-sm text-gray-600">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-100">
+                                    <!-- All transaction rows will be inserted here by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="noAllTransactionsMessage" class="text-center text-gray-500 py-8 text-lg hidden">
+                            Aucune transaction à afficher dans l'historique complet.
+                        </div>
+
+                        <!-- Pagination Controls -->
+                        <div class="flex justify-between items-center mt-6">
+                            <button id="prevPageBtn" class="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg shadow-sm hover:bg-gray-100 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">Précédent</button>
+                            <span class="text-gray-700">Page <span id="currentPageSpan">1</span> sur <span id="totalPagesSpan">1</span></span>
+                            <button id="nextPageBtn" class="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg shadow-sm hover:bg-gray-100 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">Suivant</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 class="text-2xl font-bold mb-6 text-gray-800">Modifier la Transaction</h3>
+            <form id="editForm">
+                <input type="hidden" id="editIndex">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div>
+                        <label for="editDate" class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                        <input type="date" id="editDate" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-2.5">
+                    </div>
+                    <div>
+                        <label for="editPerson" class="block text-sm font-medium text-gray-700 mb-1">Personne</label>
+                        <select id="editPerson" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-2.5 bg-white">
+                            <option>Samir</option>
+                            <option>ABS Filtre</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                        <div class="type-radio-group">
+                            <input type="radio" id="editTypeEntree" name="editType" value="Entrée">
+                            <label for="editTypeEntree">Entrée</label>
+                            <input type="radio" id="editTypeSortie" name="editType" value="Sortie">
+                            <label for="editTypeSortie">Sortie</label>
+                        </div>
+                    </div>
+                    <div class="col-span-full">
+                        <label for="editDescription" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                        <textarea id="editDescription" rows="5" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-2.5"></textarea>
+                    </div>
+                    <!-- Edit Currency and Amount Inputs -->
+                    <div class="md:col-span-2"> <!-- This div now spans 2 columns -->
+                        <label for="editAmount" class="block text-sm font-medium text-gray-700 mb-1">Montant</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="number" id="editAmount" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-2.5 flex-grow">
+                            <select id="editCurrency" class="mt-1 block rounded-lg border-gray-300 shadow-sm p-2.5 bg-white">
+                                <option value="DZD">DA</option>
+                                <option value="EUR">€</option>
+                                <option value="USD">$</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="editExchangeRateGroup" class="hidden md:col-span-2"> <!-- This div also spans 2 columns -->
+                        <label for="editExchangeRate" class="block text-sm font-medium text-gray-700 mb-1">Taux de Change (1 EUR/USD = X DA)</label>
+                        <input type="number" id="editExchangeRate" placeholder="0.00" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-2.5">
+                    </div>
+                    <div id="editConvertedAmountDisplay" class="col-span-full text-right text-gray-600 text-sm mt-2">
+                        Montant en DZD: <span id="editCalculatedDZD">0.00 DA</span>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-4 mt-8">
+                    <button type="button" id="cancelEditBtn" class="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-xl shadow-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300">Annuler</button>
+                    <button type="submit" class="px-6 py-3 border border-transparent text-white font-medium rounded-xl shadow-lg bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-300">Sauvegarder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal-overlay">
+        <div class="modal-content text-center">
+            <h3 class="text-2xl font-bold mb-4 text-gray-800">Confirmation</h3>
+            <p id="modalText" class="mb-8 text-lg text-gray-700">Êtes-vous sûr de vouloir supprimer cette transaction ?</p>
+            <div class="flex justify-center space-x-6">
+                <button id="confirmDeleteBtn" class="px-8 py-3 border border-transparent text-white font-medium rounded-xl shadow-lg bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-300">Oui</button>
+                <button id="cancelDeleteBtn" class="px-8 py-3 border border-gray-300 text-gray-700 font-medium rounded-xl shadow-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300">Non</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Message Modal (for alerts) -->
+    <div id="messageModal" class="modal-overlay">
+        <div class="modal-content text-center">
+            <h3 id="messageModalTitle" class="text-2xl font-bold mb-4 text-gray-800"></h3>
+            <p id="messageModalText" class="mb-8 text-lg text-gray-700"></p>
+            <button id="messageModalCloseBtn" class="px-8 py-3 border border-transparent text-white font-medium rounded-xl shadow-lg bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-300">OK</button>
+        </div>
+    </div>
+    
+    <div id="print-section" class="hidden"></div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const availableAmountEl = document.getElementById('availableAmount');
+            const availableAmountBox = document.getElementById('availableAmountBox');
+            const totalRevenueEl = document.getElementById('totalRevenue');
+            const totalExpenseEl = document.getElementById('totalExpense');
+            const transactionCountEl = document.getElementById('transactionCount');
+            const addTransactionBtn = document.getElementById('addTransaction');
+            const transactionTableBody = document.querySelector('#transactionTable tbody');
+            const noRecentTransactionsMessage = document.getElementById('noRecentTransactionsMessage');
+            const allTransactionsTableBody = document.querySelector('#allTransactionsTable tbody');
+            const noAllTransactionsMessage = document.getElementById('noAllTransactionsMessage');
+            const printBtn = document.getElementById('printBtn');
+            const saveFileBtn = document.getElementById('saveFileBtn');
+            const restoreFileInput = document.getElementById('restoreFileInput');
+            const addTransactionContainer = document.getElementById('addTransactionContainer');
+            
+            // View Sections
+            const dashboardView = document.getElementById('dashboardView');
+            const allTransactionsView = document.getElementById('allTransactionsView');
+            const dashboardBtn = document.getElementById('dashboardBtn');
+            const allTransactionsBtn = document.getElementById('allTransactionsBtn');
+
+            // All Transactions View Controls
+            const searchTransactionsInput = document.getElementById('searchTransactions');
+            const filterPersonSelect = document.getElementById('filterPerson');
+            const filterTypeSelect = document.getElementById('filterType');
+            const prevPageBtn = document.getElementById('prevPageBtn');
+            const nextPageBtn = document.getElementById('nextPageBtn');
+            const currentPageSpan = document.getElementById('currentPageSpan');
+            const totalPagesSpan = document.getElementById('totalPagesSpan');
+
+            // Delete Modal
+            const confirmModal = document.getElementById('confirmModal');
+            const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+            const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+
+            // Edit Modal
+            const editModal = document.getElementById('editModal');
+            const editForm = document.getElementById('editForm');
+            const cancelEditBtn = document.getElementById('cancelEditBtn');
+
+            // Custom Message Modal
+            const messageModal = document.getElementById('messageModal');
+            const messageModalTitle = document.getElementById('messageModalTitle');
+            const messageModalText = document.getElementById('messageModalText');
+            const messageModalCloseBtn = document.getElementById('messageModalCloseBtn');
+
+            // Form Inputs (for new transaction)
+            const dateInput = document.getElementById('date');
+            const personInput = document.getElementById('person');
+            const typeRadios = document.querySelectorAll('input[name="type"]');
+            const descriptionInput = document.getElementById('description');
+            const amountInput = document.getElementById('amount');
+            const currencySelect = document.getElementById('currency');
+            const exchangeRateInput = document.getElementById('exchangeRate');
+            const exchangeRateGroup = document.getElementById('exchangeRateGroup');
+            const calculatedDZDDisplay = document.getElementById('calculatedDZD');
+
+            // Edit Form Inputs
+            const editDateInput = document.getElementById('editDate');
+            const editPersonInput = document.getElementById('editPerson');
+            const editTypeRadios = document.querySelectorAll('input[name="editType"]');
+            const editDescriptionInput = document.getElementById('editDescription');
+            const editAmountInput = document.getElementById('editAmount');
+            const editCurrencySelect = document.getElementById('editCurrency');
+            const editExchangeRateInput = document.getElementById('editExchangeRate');
+            const editExchangeRateGroup = document.getElementById('editExchangeRateGroup');
+            const editCalculatedDZDDisplay = document.getElementById('editCalculatedDZD');
+
+
+            // Collect all navigable input elements for arrow key navigation (for add transaction form)
+            // Updated to reflect textarea and dynamic currency fields
+            const navigableInputs = [dateInput, personInput, typeRadios[0], descriptionInput, amountInput, currencySelect, exchangeRateInput];
+
+            // App State
+            let transactions = [];
+            let transactionToDeleteIndex = null;
+            let currentFocusIndex = 0; // For arrow key navigation in add transaction form
+
+            // Pagination state for all transactions view
+            let currentPage = 1;
+            const itemsPerPage = 50;
+            let searchTerm = '';
+            let filterPerson = '';
+            let filterType = '';
+
+            // Set today's date by default
+            dateInput.valueAsDate = new Date();
+
+            /**
+             * Displays a custom message modal instead of `alert()`.
+             * @param {string} title - The title of the message.
+             * @param {string} message - The message content.
+             */
+            function showMessageModal(title, message) {
+                messageModalTitle.textContent = title;
+                messageModalText.textContent = message;
+                messageModal.classList.add('visible');
+            }
+
+            /**
+             * Hides the custom message modal.
+             */
+            function hideMessageModal() {
+                messageModal.classList.remove('visible');
+            }
+
+            /**
+             * Saves the current transactions array to localStorage.
+             */
+            function saveTransactionsToLocalStorage() {
+                try {
+                    localStorage.setItem('facturisationTransactions', JSON.stringify(transactions));
+                } catch (e) {
+                    console.error("Error saving to localStorage:", e);
+                    showMessageModal("Erreur de Sauvegarde", "Impossible de sauvegarder les données. Le stockage de votre navigateur est peut-être plein.");
+                }
+            }
+
+            /**
+             * Loads transactions from localStorage when the app starts.
+             */
+            function loadTransactionsFromLocalStorage() {
+                try {
+                    const storedData = localStorage.getItem('facturisationTransactions');
+                    if (storedData) {
+                        transactions = JSON.parse(storedData);
+                    }
+                } catch (e) {
+                    console.error("Error loading from localStorage:", e);
+                    transactions = []; // Reset transactions if loading fails
+                    showMessageModal("Erreur de Chargement", "Impossible de charger les données sauvegardées. Elles sont peut-être corrompues.");
+                }
+            }
+
+            /**
+             * Updates the background color of the add transaction form based on the selected type (Entrée/Sortie).
+             */
+            function updateAddTransactionBackground() {
+                const selectedType = document.querySelector('input[name="type"]:checked').value;
+                if (selectedType === 'Entrée') {
+                    addTransactionContainer.classList.add('entree-bg');
+                    addTransactionContainer.classList.remove('sortie-bg');
+                } else {
+                    addTransactionContainer.classList.add('sortie-bg');
+                    addTransactionContainer.classList.remove('entree-bg');
+                }
+            }
+
+            /**
+             * Renders transaction rows into a given table body.
+             * @param {HTMLElement} tableBody - The tbody element to render into.
+             * @param {Array} transactionsToRender - The array of transactions to render.
+             * @param {boolean} includeActions - Whether to include edit/delete action buttons.
+             */
+            function renderTransactionRows(tableBody, transactionsToRender, includeActions) {
+                tableBody.innerHTML = ''; // Clear existing rows
+                if (transactionsToRender.length === 0) {
+                    return false; // Indicate no rows were rendered
+                }
+
+                transactionsToRender.forEach((tx) => {
+                    const row = document.createElement('tr');
+                    const isEntree = tx.type === 'Entrée';
+                    row.className = `border-b ${isEntree ? 'table-row-enter' : 'table-row-exit'}`;
+
+                    // Find the original index for editing/deleting in the unsorted 'transactions' array
+                    const originalIndex = transactions.findIndex(item => 
+                        item.date === tx.date && 
+                        item.person === tx.person && 
+                        item.type === tx.type && 
+                        item.description === tx.description && 
+                        item.amount === tx.amount &&
+                        item.foreignAmount === tx.foreignAmount &&
+                        item.foreignCurrency === tx.foreignCurrency &&
+                        item.exchangeRate === tx.exchangeRate
+                    );
+
+                    let actionsHtml = '';
+                    if (includeActions) {
+                        actionsHtml = `
+                            <td class="text-center py-3 px-4">
+                                <div class="flex justify-center items-center space-x-2">
+                                    <button data-index="${originalIndex}" class="action-btn edit-btn" title="Modifier">✏️</button>
+                                    <button data-index="${originalIndex}" class="action-btn delete-btn" title="Supprimer">🗑️</button>
+                                </div>
+                            </td>
+                        `;
+                    } else {
+                        // If actions are not included, ensure the cell is still present for consistent column count
+                        actionsHtml = `<td class="py-3 px-4"></td>`; 
+                    }
+
+                    let amountDisplay = `${parseFloat(tx.amount).toFixed(2)} DA`;
+                    if (tx.foreignAmount && tx.foreignCurrency && tx.exchangeRate) {
+                        amountDisplay = `
+                            ${parseFloat(tx.foreignAmount).toFixed(2)} ${tx.foreignCurrency}
+                            <span class="block text-xs text-gray-500">(${parseFloat(tx.exchangeRate).toFixed(2)} DA/${tx.foreignCurrency})</span>
+                            <span class="block text-xs text-gray-700 font-semibold">${parseFloat(tx.amount).toFixed(2)} DA</span>
+                        `;
+                    }
+
+                    row.innerHTML = `
+                        <td class="py-3 px-4">${tx.date}</td>
+                        <td class="py-3 px-4">${tx.person}</td>
+                        <td class="py-3 px-4">${tx.type}</td>
+                        <td class="py-3 px-4">${tx.description}</td>
+                        <td class="text-right py-3 px-4 font-medium">${amountDisplay}</td>
+                        ${actionsHtml}
+                    `;
+                    tableBody.appendChild(row);
+                });
+                return true; // Indicate rows were rendered
+            }
+
+            /**
+             * Renders the transactions in the recent transactions table and updates summary statistics.
+             */
+            function renderRecentTransactions() {
+                // Sort transactions by date in descending order for display
+                const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                // Render Recent Transactions (top 3)
+                const recentTransactions = sortedTransactions.slice(0, 3); 
+                const recentRendered = renderTransactionRows(transactionTableBody, recentTransactions, true);
+                if (!recentRendered) {
+                    noRecentTransactionsMessage.classList.remove('hidden');
+                } else {
+                    noRecentTransactionsMessage.classList.add('hidden');
+                }
+            }
+
+            /**
+             * Renders all transactions with search, filter, and pagination.
+             */
+            function displayAllTransactions() {
+                let filteredTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort all transactions
+
+                // Apply search filter
+                if (searchTerm) {
+                    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+                    filteredTransactions = filteredTransactions.filter(tx => 
+                        tx.description.toLowerCase().includes(lowerCaseSearchTerm) ||
+                        tx.person.toLowerCase().includes(lowerCaseSearchTerm)
+                    );
+                }
+
+                // Apply person filter
+                if (filterPerson) {
+                    filteredTransactions = filteredTransactions.filter(tx => tx.person === filterPerson);
+                }
+
+                // Apply type filter
+                if (filterType) {
+                    filteredTransactions = filteredTransactions.filter(tx => tx.type === filterType);
+                }
+
+                // Calculate pagination
+                const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+                if (currentPage > totalPages && totalPages > 0) {
+                    currentPage = totalPages; // Adjust current page if it's out of bounds after filtering
+                } else if (totalPages === 0) {
+                    currentPage = 1; // Reset to page 1 if no transactions
+                }
+
+                const startIndex = (currentPage - 1) * itemsPerPage;
+                const endIndex = startIndex + itemsPerPage;
+                const transactionsOnPage = filteredTransactions.slice(startIndex, endIndex);
+
+                const allRendered = renderTransactionRows(allTransactionsTableBody, transactionsOnPage, true);
+                if (!allRendered) {
+                    noAllTransactionsMessage.classList.remove('hidden');
+                } else {
+                    noAllTransactionsMessage.classList.add('hidden');
+                }
+
+                // Update pagination controls
+                currentPageSpan.textContent = currentPage;
+                totalPagesSpan.textContent = totalPages > 0 ? totalPages : 1; // Ensure at least 1 page is shown
+                prevPageBtn.disabled = currentPage === 1;
+                nextPageBtn.disabled = currentPage === totalPages || totalPages === 0;
+            }
+
+            /**
+             * Updates summary statistics (available amount, total revenue, total expense, transaction count).
+             */
+            function updateSummaryStatistics() {
+                let totalAmount = 0;
+                let totalRevenue = 0;
+                let totalExpense = 0;
+
+                transactions.forEach(tx => {
+                    const amount = parseFloat(tx.amount); // amount is always in DZD
+                    if (tx.type === 'Entrée') {
+                        totalAmount += amount;
+                        totalRevenue += amount;
+                    } else {
+                        totalAmount -= amount;
+                        totalExpense += amount;
+                    }
+                });
+
+                availableAmountEl.textContent = `${totalAmount.toFixed(2)} DA`;
+                availableAmountBox.classList.toggle('negative', totalAmount < 0);
+
+                totalRevenueEl.textContent = `${totalRevenue.toFixed(2)} DA`;
+                totalExpenseEl.textContent = `${totalExpense.toFixed(2)} DA`;
+                transactionCountEl.textContent = `${transactions.length} 📋`;
+            }
+
+            /**
+             * Main render function that calls all necessary rendering updates.
+             */
+            function renderAllUI() {
+                updateSummaryStatistics();
+                renderRecentTransactions();
+                displayAllTransactions(); // This will handle sorting, filtering, and pagination for the full list
+            }
+
+            /**
+             * Calculates and displays the converted DZD amount for the add transaction form.
+             */
+            function calculateAndDisplayDZD() {
+                const amount = parseFloat(amountInput.value);
+                const currency = currencySelect.value;
+                let convertedAmount = 0;
+                let exchangeRate = 1;
+
+                if (currency === 'DZD') {
+                    convertedAmount = amount;
+                    exchangeRateGroup.classList.add('hidden');
+                } else {
+                    exchangeRateGroup.classList.remove('hidden');
+                    exchangeRate = parseFloat(exchangeRateInput.value);
+                    if (!isNaN(amount) && !isNaN(exchangeRate) && exchangeRate > 0) {
+                        convertedAmount = amount * exchangeRate;
+                    }
+                }
+                calculatedDZDDisplay.textContent = `${isNaN(convertedAmount) ? '0.00' : convertedAmount.toFixed(2)} DA`;
+            }
+
+            /**
+             * Calculates and displays the converted DZD amount for the edit transaction form.
+             */
+            function calculateAndDisplayEditDZD() {
+                const amount = parseFloat(editAmountInput.value);
+                const currency = editCurrencySelect.value;
+                let convertedAmount = 0;
+                let exchangeRate = 1;
+
+                if (currency === 'DZD') {
+                    convertedAmount = amount;
+                    editExchangeRateGroup.classList.add('hidden');
+                } else {
+                    editExchangeRateGroup.classList.remove('hidden');
+                    exchangeRate = parseFloat(editExchangeRateInput.value);
+                    if (!isNaN(amount) && !isNaN(exchangeRate) && exchangeRate > 0) {
+                        convertedAmount = amount * exchangeRate;
+                    }
+                }
+                editCalculatedDZDDisplay.textContent = `${isNaN(convertedAmount) ? '0.00' : convertedAmount.toFixed(2)} DA`;
+            }
+
+            /**
+             * Adds a new transaction to the list.
+             */
+            function addTransaction() {
+                const date = dateInput.value;
+                const person = personInput.value;
+                const type = document.querySelector('input[name="type"]:checked').value;
+                const description = descriptionInput.value.trim();
+                const originalAmount = parseFloat(amountInput.value);
+                const currency = currencySelect.value;
+                let exchangeRate = 1;
+                let amountInDZD = originalAmount;
+
+                if (!date || !person || !type || !description || isNaN(originalAmount) || originalAmount <= 0) {
+                    showMessageModal("Erreur de Saisie", "Veuillez remplir tous les champs correctement et assurez-vous que le montant est positif.");
+                    return;
+                }
+
+                if (currency !== 'DZD') {
+                    exchangeRate = parseFloat(exchangeRateInput.value);
+                    if (isNaN(exchangeRate) || exchangeRate <= 0) {
+                        showMessageModal("Erreur de Saisie", "Veuillez entrer un taux de change valide et positif.");
+                        return;
+                    }
+                    amountInDZD = originalAmount * exchangeRate;
+                }
+
+                const newTransaction = {
+                    date,
+                    person,
+                    type,
+                    description,
+                    amount: amountInDZD.toFixed(2) // Store converted DZD amount
+                };
+
+                if (currency !== 'DZD') {
+                    newTransaction.foreignAmount = originalAmount.toFixed(2);
+                    newTransaction.foreignCurrency = currency;
+                    newTransaction.exchangeRate = exchangeRate.toFixed(2);
+                }
+
+                transactions.push(newTransaction);
+                saveTransactionsToLocalStorage();
+                renderAllUI(); // Re-render all UI sections
+                clearInputs();
+                showMessageModal("Succès !", "Transaction ajoutée avec succès !"); // Show success message
+            }
+            
+            /**
+             * Shows the delete confirmation modal.
+             * @param {number} index - The index of the transaction to delete.
+             */
+            function showDeleteModal(index) {
+                transactionToDeleteIndex = index;
+                confirmModal.classList.add('visible');
+            }
+
+            /**
+             * Hides the delete confirmation modal.
+             */
+            function hideDeleteModal() {
+                transactionToDeleteIndex = null;
+                confirmModal.classList.remove('visible');
+            }
+
+            /**
+             * Deletes the transaction at the stored index.
+             */
+            function deleteTransaction() {
+                if (transactionToDeleteIndex !== null) {
+                    transactions.splice(transactionToDeleteIndex, 1);
+                    saveTransactionsToLocalStorage();
+                    renderAllUI(); // Re-render all UI sections
+                    hideDeleteModal();
+                }
+            }
+            
+            /**
+             * Shows the edit transaction modal and populates it with transaction data.
+             * @param {number} index - The index of the transaction to edit.
+             */
+            function showEditModal(index) {
+                const tx = transactions[index];
+                document.getElementById('editIndex').value = index;
+                editDateInput.value = tx.date;
+                editPersonInput.value = tx.person;
+                if (tx.type === 'Entrée') {
+                    document.getElementById('editTypeEntree').checked = true;
+                } else {
+                    document.getElementById('editTypeSortie').checked = true;
+                }
+                editDescriptionInput.value = tx.description;
+                
+                // Populate currency-specific fields for edit modal
+                if (tx.foreignCurrency) {
+                    editCurrencySelect.value = tx.foreignCurrency;
+                    editAmountInput.value = tx.foreignAmount;
+                    editExchangeRateInput.value = tx.exchangeRate;
+                } else {
+                    editCurrencySelect.value = 'DZD';
+                    editAmountInput.value = tx.amount; // DZD amount
+                    editExchangeRateInput.value = ''; // Clear exchange rate
+                }
+                calculateAndDisplayEditDZD(); // Update DZD display based on loaded values
+                editModal.classList.add('visible');
+            }
+
+            /**
+             * Hides the edit transaction modal.
+             */
+            function hideEditModal() {
+                editModal.classList.remove('visible');
+                editForm.reset();
+            }
+
+            /**
+             * Saves changes made in the edit form to the transaction.
+             * @param {Event} e - The form submission event.
+             */
+            function saveTransactionChanges(e) {
+                e.preventDefault();
+                const index = document.getElementById('editIndex').value;
+                const updatedOriginalAmount = parseFloat(editAmountInput.value);
+                const updatedCurrency = editCurrencySelect.value;
+                let updatedExchangeRate = 1;
+                let updatedAmountInDZD = updatedOriginalAmount;
+
+                if (!editDateInput.value || !editPersonInput.value || !document.querySelector('input[name="editType"]:checked').value || !editDescriptionInput.value.trim() || isNaN(updatedOriginalAmount) || updatedOriginalAmount <= 0) {
+                    showMessageModal("Erreur de Saisie", "Veuillez remplir tous les champs correctement et assurez-vous que le montant est positif.");
+                    return;
+                }
+
+                if (updatedCurrency !== 'DZD') {
+                    updatedExchangeRate = parseFloat(editExchangeRateInput.value);
+                    if (isNaN(updatedExchangeRate) || updatedExchangeRate <= 0) {
+                        showMessageModal("Erreur de Saisie", "Veuillez entrer un taux de change valide et positif.");
+                        return;
+                    }
+                    updatedAmountInDZD = updatedOriginalAmount * updatedExchangeRate;
+                }
+
+                const updatedTx = {
+                    date: editDateInput.value,
+                    person: editPersonInput.value,
+                    type: document.querySelector('input[name="editType"]:checked').value,
+                    description: editDescriptionInput.value.trim(),
+                    amount: updatedAmountInDZD.toFixed(2) // Always store DZD equivalent
+                };
+
+                if (updatedCurrency !== 'DZD') {
+                    updatedTx.foreignAmount = updatedOriginalAmount.toFixed(2);
+                    updatedTx.foreignCurrency = updatedCurrency;
+                    updatedTx.exchangeRate = updatedExchangeRate.toFixed(2);
+                }
+
+                transactions[index] = updatedTx;
+                saveTransactionsToLocalStorage();
+                renderAllUI(); // Re-render all UI sections
+                hideEditModal();
+                showMessageModal("Succès !", "Modifications sauvegardées avec succès !"); // Show success message
+            }
+
+            /**
+             * Clears the input fields of the add transaction form.
+             */
+            function clearInputs() {
+                descriptionInput.value = '';
+                amountInput.value = '';
+                dateInput.valueAsDate = new Date(); // Reset date to today
+                personInput.focus(); // Set focus to the first input after clearing
+                currentFocusIndex = 0; // Reset focus index
+                document.getElementById('typeEntree').checked = true; 
+                updateAddTransactionBackground(); // Update background after clearing/resetting type
+                currencySelect.value = 'DZD'; // Reset currency to DZD
+                exchangeRateInput.value = ''; // Clear exchange rate
+                exchangeRateGroup.classList.add('hidden'); // Hide exchange rate group
+                calculatedDZDDisplay.textContent = '0.00 DA'; // Reset DZD display
+            }
+
+            /**
+             * Saves all transactions to a JSON file.
+             */
+            function saveDataToFile() {
+                if (transactions.length === 0) {
+                    showMessageModal("Aucune Donnée", "Il n'y a aucune transaction à sauvegarder.");
+                    return;
+                }
+                const dataStr = JSON.stringify(transactions, null, 2);
+                const dataBlob = new Blob([dataStr], {type: "application/json"});
+                const url = URL.createObjectURL(dataBlob);
+                const link = document.createElement('a');
+                const date = new Date().toISOString().slice(0, 10);
+                link.download = `factures-data-${date}.json`;
+                link.href = url;
+                link.click();
+                URL.revokeObjectURL(url);
+                showMessageModal("Sauvegarde Réussie", "Vos données ont été sauvegardées avec succès !");
+            }
+
+            /**
+             * Restores transactions from a selected JSON file.
+             * @param {Event} event - The file input change event.
+             */
+            function restoreDataFromFile(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if (Array.isArray(data)) {
+                            transactions = data;
+                            saveTransactionsToLocalStorage(); // Save restored data to local storage
+                            renderAllUI(); // Re-render all UI sections
+                            showMessageModal("Restauration Réussie", "Les données ont été restaurées avec succès !");
+                        } else {
+                            showMessageModal("Erreur de Fichier", "Format de fichier invalide. Veuillez sélectionner un fichier JSON valide.");
+                        }
+                    } catch (error) {
+                        console.error("Impossible de lire le fichier.", error);
+                        showMessageModal("Erreur de Lecture", "Impossible de lire le fichier. Assurez-vous qu'il s'agit d'un fichier JSON valide.");
+                    }
+                };
+                reader.readAsText(file);
+                event.target.value = null; // Clear the file input
+            }
+
+            /**
+             * Generates a printable version of the transactions and triggers the print dialog.
+             */
+            function printTransactions() {
+                const printArea = document.getElementById('print-section');
+                
+                // Construct the table HTML for printing directly from the full transactions array
+                let fullTableHtml = `
+                    <table class="min-w-full divide-y divide-gray-200" style="width: 100%; border-collapse: collapse;">
+                        <thead style="background-color: #f3f4f6;">
+                            <tr>
+                                <th style="text-align: left; padding: 1rem 1.25rem; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #e5e7eb;">Date</th>
+                                <th style="text-align: left; padding: 1rem 1.25rem; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #e5e7eb;">Personne</th>
+                                <th style="text-align: left; padding: 1rem 1.25rem; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #e5e7eb;">Type</th>
+                                <th style="text-align: left; padding: 1rem 1.25rem; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #e5e7eb;">Description</th>
+                                <th style="text-align: right; padding: 1rem 1.25rem; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #e5e7eb;">Montant (DA)</th>
+                            </tr>
+                        </thead>
+                        <tbody style="background-color: white; divide-y divide-gray-100;">
+                `;
+
+                const sortedForPrint = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort for consistent print order
+
+                sortedForPrint.forEach((tx) => {
+                    const isEntree = tx.type === 'Entrée';
+                    const rowClass = isEntree ? 'table-row-enter' : 'table-row-exit';
+                    
+                    let amountDisplay = `${parseFloat(tx.amount).toFixed(2)} DA`;
+                    if (tx.foreignAmount && tx.foreignCurrency && tx.exchangeRate) {
+                        amountDisplay = `
+                            ${parseFloat(tx.foreignAmount).toFixed(2)} ${tx.foreignCurrency}
+                            <br/>(${parseFloat(tx.exchangeRate).toFixed(2)} DA/${tx.foreignCurrency})
+                            <br/>${parseFloat(tx.amount).toFixed(2)} DA
+                        `;
+                    }
+
+                    fullTableHtml += `
+                        <tr class="${rowClass}" style="border-bottom: 1px solid #e5e7eb;">
+                            <td style="padding: 1rem 1.25rem;">${tx.date}</td>
+                            <td style="padding: 1rem 1.25rem;">${tx.person}</td>
+                            <td style="padding: 1rem 1.25rem;">${tx.type}</td>
+                            <td style="padding: 1rem 1.25rem;">${tx.description}</td>
+                            <td style="text-align: right; padding: 1rem 1.25rem; font-weight: 500;">${amountDisplay}</td>
+                        </tr>
+                    `;
+                });
+                fullTableHtml += `</tbody></table>`;
+                
+                // Get current summary data
+                const totalAmount = availableAmountEl.textContent;
+                const totalRevenue = totalRevenueEl.textContent;
+                const totalExpense = totalExpenseEl.textContent;
+                const printDate = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+                // Construct the HTML for the print section
+                printArea.innerHTML = `
+                    <div style="padding: 2rem; font-family: 'Inter', sans-serif; color: #333;">
+                        <header style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4a90e2; padding-bottom: 0.5rem; margin-bottom: 1rem;">
+                            <h1 style="font-size: 1.8rem; font-weight: 700; color: #4a90e2;">Relevé de Compte</h1>
+                            <div style="text-align: right;">
+                                <p style="margin: 0;">Samir & ABS Filtre</p>
+                                <p style="margin: 0; font-size: 0.8rem; color: #555;">Généré le: ${printDate}</p>
+                            </div>
+                        </header>
+                        
+                        <div style="background-color: #f0f8ff; border: 1px solid #4a90e2; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; text-align: center;">
+                            <h2 style="font-size: 1.1rem; margin: 0 0 0.5rem 0; color: #4a90e2;">Solde Actuel</h2>
+                            <p style="font-size: 2.5rem; font-weight: 700; margin: 0;">${totalAmount}</p>
+                        </div>
+
+                        <div class="summary-boxes" style="display: flex; justify-content: space-around; margin-bottom: 1.5rem; text-align: center;">
+                            <div style="background-color: #e6fffa; border: 1px solid #38a169; border-radius: 8px; padding: 0.6rem 0.8rem; flex: 1; margin: 0 5px;">
+                                <h3 style="font-size: 0.8rem; margin: 0 0 0.3rem 0; color: #38a169;">Total Revenus</h3>
+                                <p style="font-size: 1.3rem; font-weight: 600; margin: 0; color: #38a169;">${totalRevenue}</p>
+                            </div>
+                            <div style="background-color: #ffe5e5; border: 1px solid #e53e3e; border-radius: 8px; padding: 0.6rem 0.8rem; flex: 1; margin: 0 5px;">
+                                <h3 style="font-size: 0.8rem; margin: 0 0 0.3rem 0; color: #e53e3e;">Total Dépenses</h3>
+                                <p style="font-size: 1.3rem; font-weight: 600; margin: 0; color: #e53e3e;">${totalExpense}</p>
+                            </div>
+                             <div style="background-color: #edf2f7; border: 1px solid #a0aec0; border-radius: 8px; padding: 0.6rem 0.8rem; flex: 1; margin: 0 5px;">
+                                <h3 style="font-size: 0.8rem; margin: 0 0 0.3rem 0; color: #4a5568;">Nombre de Transactions</h3>
+                                <p style="font-size: 1.3rem; font-weight: 600; margin: 0; color: #4a5568;">${transactions.length} 📋</p>
+                            </div>
+                        </div>
+
+                        <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 0.8rem; color: #333;">Historique Complet des Transactions</h2>
+
+                        ${fullTableHtml}
+
+                        <footer style="text-align: center; margin-top: 2rem; font-size: 0.7rem; color: #888;">
+                            <p>Merci de votre confiance.</p>
+                        </footer>
+                    </div>
+                `;
+                
+                printArea.classList.remove('hidden');
+                window.print();
+                printArea.classList.add('hidden');
+                printArea.innerHTML = ''; // Clear print area after printing
+            }
+
+            /**
+             * Shows a specific view section and hides others.
+             * @param {string} viewId - The ID of the view section to show ('dashboardView' or 'allTransactionsView').
+             */
+            function showView(viewId) {
+                dashboardView.classList.add('hidden');
+                allTransactionsView.classList.add('hidden');
+
+                if (viewId === 'dashboardView') {
+                    dashboardView.classList.remove('hidden');
+                    renderRecentTransactions(); // Ensure recent transactions are updated when returning to dashboard
+                } else if (viewId === 'allTransactionsView') {
+                    allTransactionsView.classList.remove('hidden');
+                    // Reset pagination and filters when navigating to this view
+                    currentPage = 1;
+                    searchTerm = '';
+                    filterPerson = '';
+                    filterType = '';
+                    searchTransactionsInput.value = '';
+                    filterPersonSelect.value = '';
+                    filterTypeSelect.value = '';
+                    displayAllTransactions(); // Render with initial filters/pagination
+                }
+            }
+
+            // --- Keyboard Navigation Logic ---
+            document.addEventListener('keydown', function(e) {
+                // Disable general navigation if any modal is open
+                if (editModal.classList.contains('visible') || confirmModal.classList.contains('visible') || messageModal.classList.contains('visible')) {
+                    return; 
+                }
+
+                const activeElement = document.activeElement;
+                // Dynamically update navigableInputs based on exchangeRateGroup visibility
+                let currentNavigableInputs = [dateInput, personInput, typeRadios[0], descriptionInput, amountInput, currencySelect];
+                if (!exchangeRateGroup.classList.contains('hidden')) {
+                    currentNavigableInputs.push(exchangeRateInput);
+                }
+                
+                // Add the "Ajouter" button to the navigable elements at the end
+                currentNavigableInputs.push(addTransactionBtn);
+
+                const isFormInput = currentNavigableInputs.includes(activeElement) || Array.from(typeRadios).includes(activeElement);
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault(); // Prevent scrolling
+                    const currentInputIndex = currentNavigableInputs.indexOf(activeElement);
+                    if (currentInputIndex !== -1 && currentInputIndex < currentNavigableInputs.length - 1) {
+                        currentNavigableInputs[currentInputIndex + 1].focus();
+                        currentFocusIndex = currentInputIndex + 1;
+                    } else if (currentInputIndex === currentNavigableInputs.length - 1) { // If on the last navigable element (Add button)
+                        dateInput.focus(); // Loop back to the first input
+                        currentFocusIndex = 0;
+                    } else if (!activeElement || activeElement === document.body) { // If no element is focused or body is focused
+                        dateInput.focus(); // Focus the first input
+                        currentFocusIndex = 0;
+                    }
+
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault(); // Prevent scrolling
+                    const currentInputIndex = currentNavigableInputs.indexOf(activeElement);
+                    if (currentInputIndex > 0) {
+                        currentNavigableInputs[currentInputIndex - 1].focus();
+                        currentFocusIndex = currentInputIndex - 1;
+                    } else if (currentInputIndex === 0) { // If on the first input
+                        addTransactionBtn.focus(); // Loop to the Add button
+                        currentFocusIndex = currentNavigableInputs.length - 1;
+                    } else if (!activeElement || activeElement === document.body) {
+                        addTransactionBtn.focus(); // If nothing focused, start at Add button
+                    }
+
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                    if (activeElement === typeRadios[0]) {
+                        e.preventDefault();
+                        typeRadios[1].focus();
+                        typeRadios[1].checked = true;
+                        updateAddTransactionBackground();
+                    } else if (activeElement === typeRadios[1]) {
+                        e.preventDefault();
+                        typeRadios[0].focus();
+                        typeRadios[0].checked = true;
+                        updateAddTransactionBackground();
+                    }
+                } else if (e.key === 'Enter') {
+                    // If focused on the Add button, trigger click
+                    if (activeElement === addTransactionBtn) {
+                        e.preventDefault(); // Prevent default form submission if any
+                        addTransactionBtn.click();
+                    }
+                }
+            });
+
+            // Set currentFocusIndex when inputs are manually focused
+            navigableInputs.forEach((input, index) => {
+                input.addEventListener('focus', () => {
+                    currentFocusIndex = index;
+                });
+            });
+
+
+            // Event Listeners
+            addTransactionBtn.addEventListener('click', addTransaction);
+            saveFileBtn.addEventListener('click', saveDataToFile);
+            restoreFileInput.addEventListener('change', restoreDataFromFile);
+            printBtn.addEventListener('click', printTransactions);
+            
+            typeRadios.forEach(radio => {
+                radio.addEventListener('change', updateAddTransactionBackground);
+            });
+
+            // Event delegation for action buttons in tables (both recent and all transactions)
+            document.addEventListener('click', function(e) {
+                const target = e.target.closest('.action-btn');
+                if (!target) return;
+
+                const index = parseInt(target.getAttribute('data-index'));
+                if (target.classList.contains('edit-btn')) {
+                    showEditModal(index);
+                } else if (target.classList.contains('delete-btn')) {
+                    showDeleteModal(index);
+                }
+            });
+            
+            confirmDeleteBtn.addEventListener('click', deleteTransaction);
+            cancelDeleteBtn.addEventListener('click', hideDeleteModal);
+            editForm.addEventListener('submit', saveTransactionChanges);
+            cancelEditBtn.addEventListener('click', hideEditModal);
+
+            messageModalCloseBtn.addEventListener('click', hideMessageModal);
+
+            // Currency conversion listeners for Add Transaction form
+            currencySelect.addEventListener('change', calculateAndDisplayDZD);
+            amountInput.addEventListener('input', calculateAndDisplayDZD);
+            exchangeRateInput.addEventListener('input', calculateAndDisplayDZD);
+
+            // Currency conversion listeners for Edit Transaction form
+            editCurrencySelect.addEventListener('change', calculateAndDisplayEditDZD);
+            editAmountInput.addEventListener('input', calculateAndDisplayEditDZD);
+            editExchangeRateInput.addEventListener('input', calculateAndDisplayEditDZD);
+
+
+            // View navigation listeners
+            dashboardBtn.addEventListener('click', () => showView('dashboardView'));
+            allTransactionsBtn.addEventListener('click', () => showView('allTransactionsView'));
+
+            // All Transactions View search/filter/pagination listeners
+            searchTransactionsInput.addEventListener('input', (e) => {
+                searchTerm = e.target.value;
+                currentPage = 1; // Reset to first page on search
+                displayAllTransactions();
+            });
+
+            filterPersonSelect.addEventListener('change', (e) => {
+                filterPerson = e.target.value;
+                currentPage = 1; // Reset to first page on filter change
+                displayAllTransactions();
+            });
+
+            filterTypeSelect.addEventListener('change', (e) => {
+                filterType = e.target.value;
+                currentPage = 1; // Reset to first page on filter change
+                displayAllTransactions();
+            });
+
+            prevPageBtn.addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    displayAllTransactions();
+                }
+            });
+
+            nextPageBtn.addEventListener('click', () => {
+                const filteredTransactions = [...transactions].filter(tx => 
+                    (searchTerm ? (tx.description.toLowerCase().includes(searchTerm.toLowerCase()) || tx.person.toLowerCase().includes(searchTerm.toLowerCase())) : true) &&
+                    (filterPerson ? tx.person === filterPerson : true) &&
+                    (filterType ? tx.type === filterType : true)
+                );
+                const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    displayAllTransactions();
+                }
+            });
+            
+            // Initial load from localStorage and render
+            loadTransactionsFromLocalStorage();
+            renderAllUI(); // Initial render of all UI components
+            showView('dashboardView'); // Show dashboard by default
+            calculateAndDisplayDZD(); // Initial calculation for add form
+        });
+    </script>
+</body>
+</html>
